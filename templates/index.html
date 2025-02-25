@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkSight</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        body { 
+            padding: 20px; 
+            background-color: #f8f9fa;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .url-card {
+            margin-bottom: 10px;
+            position: relative;
+            padding-right: 30px;
+        }
+        .url-remove {
+            position: absolute;
+            right: 5px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #dc3545;
+        }
+        .url-badge {
+            display: inline-block;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            padding: 8px 12px;
+            background-color: #f1f1f1;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        .url-badge .close {
+            margin-left: 8px;
+            font-size: 16px;
+        }
+        .spinner-border {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 8px;
+        }
+        #sources-container {
+            margin-top: 20px;
+            border-top: 1px solid #dee2e6;
+            padding-top: 15px;
+        }
+        .source-item {
+            padding: 8px;
+            margin-bottom: 6px;
+            border-left: 3px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .score-badge {
+            margin-left: 10px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">LinkSight</h1>
+        
+        <!-- URL Input Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Step 1: Add URLs to Analyze</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-row align-items-center mb-3">
+                    <div class="col-md-10">
+                        <input type="text" class="form-control" id="url-input" placeholder="Enter a URL (e.g., https://www.example.com)">
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-success btn-block" id="add-url-btn">
+                            <span id="add-url-spinner" class="spinner-border d-none" role="status"></span>
+                            Add URL
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Added URLs Container -->
+                <div id="urls-container" class="mb-3">
+                    <!-- URLs will be added here dynamically -->
+                    <div class="text-muted" id="no-urls-message">No URLs added yet</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Question and Answer Section -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Step 2: Ask a Question</h5>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <textarea class="form-control" id="question-input" rows="3" placeholder="Enter your question based on the content from the URLs above..."></textarea>
+                </div>
+                <button class="btn btn-primary" id="ask-btn">
+                    <span id="ask-spinner" class="spinner-border d-none" role="status"></span>
+                    Ask Question
+                </button>
+            </div>
+        </div>
+        
+        <!-- Answer Display Section -->
+        <div class="card mb-4 d-none" id="answer-card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Answer</h5>
+            </div>
+            <div class="card-body">
+                <div id="answer-text"></div>
+                
+                <!-- Sources Section -->
+                <div id="sources-container" class="d-none">
+                    <h6>Sources:</h6>
+                    <div id="sources-list">
+                        <!-- Sources will be added here dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Error Alert -->
+        <div class="alert alert-danger d-none" id="error-alert">
+            <strong>Error:</strong> <span id="error-message"></span>
+        </div>
+    </div>
+
+    <script>
+        // Global variables to store URLs
+        const urls = new Map();
+        
+        // Elements
+        const urlInput = document.getElementById('url-input');
+        const addUrlBtn = document.getElementById('add-url-btn');
+        const urlsContainer = document.getElementById('urls-container');
+        const noUrlsMessage = document.getElementById('no-urls-message');
+        const questionInput = document.getElementById('question-input');
+        const askBtn = document.getElementById('ask-btn');
+        const answerCard = document.getElementById('answer-card');
+        const answerText = document.getElementById('answer-text');
+        const sourcesContainer = document.getElementById('sources-container');
+        const sourcesList = document.getElementById('sources-list');
+        const errorAlert = document.getElementById('error-alert');
+        const errorMessage = document.getElementById('error-message');
+        const addUrlSpinner = document.getElementById('add-url-spinner');
+        const askSpinner = document.getElementById('ask-spinner');
+        
+        // Add URL button
+        addUrlBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            if (!url) return;
+            
+            // Validate URL
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                showError('URL must start with http:// or https://');
+                return;
+            }
+            
+            // Check if URL already added
+            if (urls.has(url)) {
+                showError('This URL has already been added');
+                return;
+            }
+            
+            // Show loading spinner
+            addUrlSpinner.classList.remove('d-none');
+            addUrlBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to scrape URL');
+                }
+                
+                // Add URL to the list
+                urls.set(url, data.title || url);
+                renderUrls();
+                urlInput.value = '';
+                hideError();
+                
+            } catch (error) {
+                showError(error.message || 'An error occurred while adding the URL');
+            } finally {
+                // Hide loading spinner
+                addUrlSpinner.classList.add('d-none');
+                addUrlBtn.disabled = false;
+            }
+        });
+        
+        // Function to render URLs
+        function renderUrls() {
+            if (urls.size === 0) {
+                noUrlsMessage.classList.remove('d-none');
+                urlsContainer.innerHTML = '';
+                return;
+            }
+            
+            noUrlsMessage.classList.add('d-none');
+            let html = '';
+            
+            urls.forEach((title, url) => {
+                html += `
+                <div class="url-badge">
+                    ${title.slice(0, 30)}${title.length > 30 ? '...' : ''}
+                    <button type="button" class="close" aria-label="Remove" data-url="${url}">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>`;
+            });
+            
+            urlsContainer.innerHTML = html;
+            
+            // Add event listeners to remove buttons
+            document.querySelectorAll('.url-badge .close').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const url = this.getAttribute('data-url');
+                    urls.delete(url);
+                    renderUrls();
+                });
+            });
+        }
+        
+        // Ask question button
+        askBtn.addEventListener('click', async () => {
+            const question = questionInput.value.trim();
+            if (!question) {
+                showError('Please enter a question');
+                return;
+            }
+            
+            if (urls.size === 0) {
+                showError('Please add at least one URL');
+                return;
+            }
+            
+            // Show loading spinner
+            askSpinner.classList.remove('d-none');
+            askBtn.disabled = true;
+            hideError();
+            
+            try {
+                const response = await fetch('/answer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question: question,
+                        urls: Array.from(urls.keys())
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to get answer');
+                }
+                
+                // Display answer
+                answerText.textContent = data.answer;
+                answerCard.classList.remove('d-none');
+                
+                // Display sources if available
+                if (data.sources && data.sources.length > 0) {
+                    let sourcesHtml = '';
+                    data.sources.forEach(source => {
+                        const confidencePercent = Math.round(source.score * 100);
+                        sourcesHtml += `
+                        <div class="source-item">
+                            ${source.text}
+                            <span class="badge ${confidencePercent > 50 ? 'badge-success' : 'badge-secondary'} score-badge">
+                                ${confidencePercent}% match
+                            </span>
+                        </div>`;
+                    });
+                    sourcesList.innerHTML = sourcesHtml;
+                    sourcesContainer.classList.remove('d-none');
+                } else {
+                    sourcesContainer.classList.add('d-none');
+                }
+                
+            } catch (error) {
+                showError(error.message || 'An error occurred while getting the answer');
+                answerCard.classList.add('d-none');
+            } finally {
+                // Hide loading spinner
+                askSpinner.classList.add('d-none');
+                askBtn.disabled = false;
+            }
+        });
+        
+        // Helper functions
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorAlert.classList.remove('d-none');
+        }
+        
+        function hideError() {
+            errorAlert.classList.add('d-none');
+        }
+        
+        // Enter key handling for input fields
+        urlInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addUrlBtn.click();
+            }
+        });
+        
+        questionInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                askBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
